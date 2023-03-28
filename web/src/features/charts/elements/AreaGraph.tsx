@@ -3,13 +3,13 @@
 import { scaleLinear } from 'd3-scale';
 import { stack, stackOffsetDiverging } from 'd3-shape';
 import TimeAxis from 'features/time/TimeAxis'; // TODO: Move to a shared folder
+import useResizeObserver from 'use-resize-observer';
 import { useAtom } from 'jotai';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ZoneDetail } from 'types';
 import { TimeAverages } from 'utils/constants';
 import { selectedDatetimeIndexAtom } from 'utils/state/atoms';
 import { useBreakpoint } from 'utils/styling';
-import { useReferenceWidthHeightObserver } from 'utils/viewport';
 import { getTimeScale, isEmpty } from '../graphUtils';
 import AreaGraphTooltip from '../tooltips/AreaGraphTooltip';
 import { AreaGraphElement, InnerAreaGraphTooltipProps } from '../types';
@@ -105,12 +105,12 @@ function AreaGraph({
   tooltip,
   tooltipSize,
 }: AreagraphProps) {
-  const {
-    ref,
-    width: containerWidth,
-    height: containerHeight,
-    node,
-  } = useReferenceWidthHeightObserver(Y_AXIS_WIDTH, X_AXIS_HEIGHT);
+  const reference = useRef(null);
+  const { width: observerWidth = 0, height: observerHeight = 0 } =
+    useResizeObserver<SVGSVGElement>({ ref: reference });
+
+  const containerWidth = Math.max(observerWidth - Y_AXIS_WIDTH, 0);
+  const containerHeight = Math.max(observerHeight - X_AXIS_HEIGHT, 0);
 
   const [selectedDate] = useAtom(selectedDatetimeIndexAtom);
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
@@ -220,7 +220,7 @@ function AreaGraph({
     <svg
       data-test-id={testId}
       height={height}
-      ref={ref}
+      ref={reference}
       className="w-full overflow-visible"
     >
       <GraphBackground
@@ -230,7 +230,7 @@ function AreaGraph({
         mouseMoveHandler={mouseMoveHandler}
         mouseOutHandler={mouseOutHandler}
         isMobile={isMobile}
-        svgNode={node}
+        svgNode={reference.current}
       />
       <AreaGraphLayers
         layers={layers}
@@ -240,7 +240,7 @@ function AreaGraph({
         mouseMoveHandler={mouseMoveHandler}
         mouseOutHandler={mouseOutHandler}
         isMobile={isMobile}
-        svgNode={node}
+        svgNode={reference.current}
       />
       {!isOverlayEnabled && (
         <TimeAxis
@@ -267,7 +267,7 @@ function AreaGraph({
         markerHideHandler={markerHideHandler}
         selectedLayerIndex={selectedLayerIndex}
         selectedTimeIndex={hoverLineTimeIndex}
-        svgNode={node}
+        svgNode={reference.current}
       />
       {tooltip && (
         <AreaGraphTooltip
