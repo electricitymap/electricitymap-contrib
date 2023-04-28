@@ -1,0 +1,12 @@
+bounding_box:
+  - - -74.0865358653586
+    - -55.55070560615871
+  - - -63.08923589235887
+    - -41.48635042408212
+contributors:
+  - meiyiniu
+  - cynding
+  - juliadu
+parsers:
+  production: AR.fetch_production
+timezone: America/Argentina/Buenos_Aires

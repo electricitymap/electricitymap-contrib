@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging import Logger, getLogger
 from typing import Dict, List, Optional
 
 import arrow
+from pytz import timezone
 from requests import Session
 
 from .lib.exceptions import ParserException
@@ -20,10 +21,30 @@ from .lib.exceptions import ParserException
 CAMMESA_DEMANDA_ENDPOINT = (
     "https://api.cammesa.com/demanda-svc/generacion/ObtieneGeneracioEnergiaPorRegion/"
 )
+
+CAMMESA_RENEWABLES_ENDPOINT = "https://cdsrenovables.cammesa.com/exhisto/RenovablesService/GetChartTotalTRDataSource/"
+
+CAMMESA_RENEWABLES_REGIONAL_ENDPOINT = (
+    "https://cdsrenovables.cammesa.com/exhisto/RenovablesService/getCapacidadesRegiones"
+)
+
+CAMMESA_REGIONS_ENDPOINT = "https://api.cammesa.com/demanda-svc/demanda/RegionesDemanda"
+
 CAMMESA_EXCHANGE_ENDPOINT = (
     "https://api.cammesa.com/demanda-svc/demanda/IntercambioCorredoresGeo/"
 )
-CAMMESA_RENEWABLES_ENDPOINT = "https://cdsrenovables.cammesa.com/exhisto/RenovablesService/GetChartTotalTRDataSource/"
+
+REGIONS = {
+    "AR": "Total del SADI ",
+    "AR-BAS": "Buenos Aires",
+    "AR-NEA": "NEA",
+    "AR-NOA": "NOA",
+    "AR-CEN": "Centro",
+    "AR-PAT": "Patagonia",
+    "AR-LIT": "Litoral",
+    "AR-COM": "Comahue",
+    "AR-CUY": "Cuyo",
+}
 
 SUPPORTED_EXCHANGES = {
     "AR->CL-SEN": "ARG-CHI",
@@ -33,35 +54,35 @@ SUPPORTED_EXCHANGES = {
     "AR-BAS->AR-COM": "PBA-COM",
     "AR-CEN->AR-COM": "CEN-COM",
     "AR-CEN->AR-NOA": "CEN-NOA",
-    "AR-CUY->AR-COM": "CUY-COM",
+    "AR-COM->AR-CUY": "CUY-COM",
     "AR-CEN->AR-CUY": "CEN-CUY",
     "AR-LIT->AR-NEA": "LIT-NEA",
     "AR-BAS->AR-LIT": "PBA-LIT",
     "AR-CUY->AR-NOA": "CUY-NOA",
-    "AR-LIT->AR-CEN": "LIT-CEN",
+    "AR-CEN->AR-LIT": "LIT-CEN",
     "AR-LIT->AR-NOA": "LIT-NOA",
     "AR-BAS->AR-CEN": "PBA-CEN",
     "AR-COM->AR-PAT": "COM-PAT",
     "AR-NEA->AR-NOA": "NEA-NOA",
 }
 
-EXCHANGE_DIRECTIONS = {  # directions are from second region -> first region
-    "AR->CL-SEN": 0,
-    "AR->PY": 225,
-    "AR->UY": 180,
-    "AR-NEA->BR-S": 225,
-    "AR-BAS->AR-COM": 45,
-    "AR-CEN->AR-COM": 90,
-    "AR-CEN->AR-NOA": 315,
-    "AR-CUY->AR-COM": 135,
-    "AR-CEN->AR-CUY": 45,
-    "AR-LIT->AR-NEA": 225,
-    "AR-BAS->AR-LIT": 270,
+EXCHANGE_DIRECTIONS = {  # directions are from first region -> second region
+    "AR->CL-SEN": 180,
+    "AR->PY": 45,
+    "AR->UY": 0,
+    "AR-NEA->BR-S": 45,
+    "AR-BAS->AR-COM": 225,
+    "AR-CEN->AR-COM": 270,
+    "AR-CEN->AR-NOA": 135,
+    "AR-COM->AR-CUY": 135,
+    "AR-CEN->AR-CUY": 225,
+    "AR-LIT->AR-NEA": 45,
+    "AR-BAS->AR-LIT": 90,
     "AR-CUY->AR-NOA": 45,
-    "AR-LIT->AR-CEN": 45,
+    "AR-CEN->AR-LIT": 45,
     "AR-LIT->AR-NOA": 135,
     "AR-BAS->AR-CEN": 135,
-    "AR-COM->AR-PAT": 90,
+    "AR-COM->AR-PAT": 270,
     "AR-NEA->AR-NOA": 180,
 }
 
@@ -72,19 +93,15 @@ def fetch_production(
     target_datetime: Optional[datetime] = None,
     logger: Logger = getLogger(__name__),
 ) -> List[dict]:
-    """Requests up to date list of production mixes (in MW) of a given country."""
+    """Requests up to date list of production mixes (in MW) of a given region."""
 
     if target_datetime:
         raise NotImplementedError("This parser is not yet able to parse past dates")
 
     current_session = session or Session()
 
-    non_renewables_production: Dict[str, dict] = non_renewables_production_mix(
-        zone_key, current_session
-    )
-    renewables_production: Dict[str, dict] = renewables_production_mix(
-        zone_key, current_session
-    )
+    non_renewables_production = non_renewables_production_mix(zone_key, current_session)
+    renewables_production = renewables_production_mix(zone_key, current_session)
 
     full_production_list = [
         {
@@ -94,8 +111,6 @@ def fetch_production(
                 non_renewables_production[datetime_tz_ar],
                 renewables_production[datetime_tz_ar],
             ),
-            "capacity": {},
-            "storage": {},
             "source": "cammesaweb.cammesa.com",
         }
         for datetime_tz_ar in non_renewables_production
@@ -124,21 +139,45 @@ def merged_production_mix(non_renewables_mix: dict, renewables_mix: dict) -> dic
 def renewables_production_mix(zone_key: str, session: Session) -> Dict[str, dict]:
     """Retrieves production mix for renewables using CAMMESA's API"""
 
-    today = arrow.now(tz="America/Argentina/Buenos Aires").format("DD-MM-YYYY")
-    params = {"desde": today, "hasta": today}
-    renewables_response = session.get(CAMMESA_RENEWABLES_ENDPOINT, params=params)
-    assert renewables_response.status_code == 200, (
-        "Exception when fetching production for "
-        "{}: error when calling url={} with payload={}".format(
-            zone_key, CAMMESA_RENEWABLES_ENDPOINT, params
+    now = datetime.now(tz=timezone("America/Argentina/Buenos_Aires"))
+    today = now.strftime("%d-%m-%Y")
+    endpoint = CAMMESA_RENEWABLES_REGIONAL_ENDPOINT
+    params = {}
+    minute = now.minute
+    rounded = minute - minute % 5
+    time = now.replace(minute=rounded, second=0, microsecond=0) - timedelta(minutes=5)
+    region_name = zone_key[3:]
+
+    if zone_key == "AR":
+        params = {"desde": today, "hasta": today}
+        endpoint = CAMMESA_RENEWABLES_ENDPOINT
+
+    renewables_response = session.get(endpoint, params=params)
+    if renewables_response.status_code != 200:
+        raise ParserException(
+            "AR.py",
+            f"Exception when fetching production for {zone_key}: error when calling renewables endpoint: [{renewables_response.status_code}]  {renewables_response.text}",
+            zone_key,
         )
-    )
 
     production_list = renewables_response.json()
-    sorted_production_list = sorted(production_list, key=lambda d: d["momento"])
+    sorted_production_list = (
+        sorted(production_list, key=lambda d: d["momento"]) if zone_key == "AR" else []
+    )
+
+    if zone_key != "AR":
+        sorted_production_list = list(
+            filter(lambda d: d["nemoRegion"] == region_name, production_list)
+        )
 
     renewables_production: Dict[str, dict] = {
-        production_info["momento"]: {
+        (
+            datetime.strptime(
+                production_info["momento"], "%Y-%m-%dT%H:%M:%S.%f%z"
+            ).isoformat()
+            if zone_key == "AR"
+            else time.isoformat()
+        ): {
             "biomass": production_info["biocombustible"],
             "hydro": production_info["hidraulica"],
             "solar": production_info["fotovoltaica"],
@@ -146,27 +185,29 @@ def renewables_production_mix(zone_key: str, session: Session) -> Dict[str, dict
         }
         for production_info in sorted_production_list
     }
-
     return renewables_production
 
 
 def non_renewables_production_mix(zone_key: str, session: Session) -> Dict[str, dict]:
     """Retrieves production mix for non renewables using CAMMESA's API"""
 
-    params = {"id_region": 1002}
+    id = get_region_id(zone_key, session)
+    params = {"id_region": id}
     api_cammesa_response = session.get(CAMMESA_DEMANDA_ENDPOINT, params=params)
-    assert api_cammesa_response.status_code == 200, (
-        "Exception when fetching production for "
-        "{}: error when calling url={} with payload={}".format(
-            zone_key, CAMMESA_DEMANDA_ENDPOINT, params
+    if api_cammesa_response.status_code != 200:
+        raise ParserException(
+            "AR.py",
+            f"Exception when fetching production for {zone_key}: error when calling non-renewables endpoint: [{api_cammesa_response.status_code}]  {api_cammesa_response.text}",
+            zone_key,
         )
-    )
 
     production_list = api_cammesa_response.json()
     sorted_production_list = sorted(production_list, key=lambda d: d["fecha"])
 
     non_renewables_production: Dict[str, dict] = {
-        production_info["fecha"]: {
+        datetime.strptime(
+            production_info["fecha"], "%Y-%m-%dT%H:%M:%S.%f%z"
+        ).isoformat(): {
             "hydro": production_info["hidraulico"],
             "nuclear": production_info["nuclear"],
             # As of 2022 thermal energy is mostly natural gas but
@@ -176,8 +217,25 @@ def non_renewables_production_mix(zone_key: str, session: Session) -> Dict[str, 
         }
         for production_info in sorted_production_list
     }
-
     return non_renewables_production
+
+
+def get_region_id(zone_key, session: Session) -> int:
+    """Fetches the region id for the zone that is required to get the production of that zone."""
+    regions_response = session.get(CAMMESA_REGIONS_ENDPOINT)
+
+    if regions_response.status_code != 200:
+        raise ParserException(
+            "AR.py",
+            f"Exception when fetching regions for AR: error when calling regions endpoint: [{regions_response.status_code}]  {regions_response.text}",
+            zone_key,
+        )
+
+    regions = regions_response.json()
+    region_to_id = {region["nombre"]: region["id"] for region in regions}
+
+    region_name = REGIONS[zone_key]
+    return region_to_id[region_name]
 
 
 def fetch_exchange(
@@ -195,19 +253,23 @@ def fetch_exchange(
     sorted_codes = "->".join(sorted_zone_keys)
     flow: Optional[float] = None
     returned_datetime: datetime
+    exchange = {}
 
     if sorted_codes in SUPPORTED_EXCHANGES:
         current_session = session or Session()
 
         api_cammesa_response = current_session.get(CAMMESA_EXCHANGE_ENDPOINT)
-        assert (
-            api_cammesa_response.status_code == 200
-        ), f"Exception when fetching exchange for {sorted_codes}: error when calling url={CAMMESA_EXCHANGE_ENDPOINT}"
+        if api_cammesa_response.status_code != 200:
+            raise ParserException(
+                "AR.py",
+                f"Exception when fetching exchange for {sorted_codes}: error when calling exchange endpoint: [{api_cammesa_response.status_code}]  {api_cammesa_response.text}",
+                sorted_zone_keys,
+            )
 
         exchange_name = SUPPORTED_EXCHANGES[sorted_codes]
         exchange_list = api_cammesa_response.json()
-        for exchange in exchange_list["features"]:
-            properties = exchange["properties"]
+        for exchange_data in exchange_list["features"]:
+            properties = exchange_data["properties"]
             if properties["nombre"] == exchange_name:
                 angle_config = EXCHANGE_DIRECTIONS[sorted_codes]
                 given_angle = int(properties["url"][6:])
@@ -217,22 +279,20 @@ def fetch_exchange(
                 returned_datetime = datetime.fromisoformat(
                     properties["fecha"][:-2] + ":" + properties["fecha"][-2:]
                 )
-                break
-        if flow is None:
-            raise ParserException(
-                "AR.py",
-                f"Failed fetching exchange for {sorted_zone_keys}",
-                sorted_codes,
-            )
+                if flow is None:
+                    raise ParserException(
+                        "AR.py",
+                        f"Failed fetching exchange for {sorted_zone_keys}",
+                        sorted_codes,
+                    )
+                exchange = {
+                    "sortedZoneKeys": sorted_codes,
+                    "datetime": returned_datetime,
+                    "netFlow": flow,
+                    "source": "cammesaweb.cammesa.com",
+                }
     else:
         raise NotImplementedError("This exchange is not currently implemented")
-
-    exchange = {
-        "sortedZoneKeys": sorted_codes,
-        "datetime": returned_datetime,
-        "netFlow": flow,
-        "source": "cammesaweb.cammesa.com",
-    }
 
     return exchange
 

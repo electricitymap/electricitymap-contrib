@@ -1,0 +1,6 @@
+lonlat:
+  - -63.386
+  - -38.767
+parsers:
+  exchange: AR.fetch_exchange
+rotation: -90
