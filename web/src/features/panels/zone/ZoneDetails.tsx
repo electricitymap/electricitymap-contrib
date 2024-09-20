@@ -74,9 +74,9 @@ export default function ZoneDetails(): JSX.Element {
   const hasEstimationPill = Boolean(estimationMethod) || Boolean(estimatedPercentage);
 
   return (
-    <>
+    <div className="flex h-full flex-col">
       <ZoneHeaderTitle zoneId={zoneId} />
-      <div className="mb-3 h-[calc(100%-120px)] overflow-y-scroll p-3 pb-40 pt-2 sm:h-[calc(100%-150px)]">
+      <div className="h-full overflow-y-scroll p-3 pt-2">
         {cardType != 'none' &&
           zoneDataStatus !== ZoneDataStatus.NO_INFORMATION &&
           zoneDataStatus !== ZoneDataStatus.AGGREGATE_DISABLED && (
@@ -108,14 +108,10 @@ export default function ZoneDetails(): JSX.Element {
           )}
           <MethodologyCard />
           <Attribution zoneId={zoneId} />
-          {isMobile ? (
-            <CommercialApiButton backgroundClasses="mt-3" />
-          ) : (
-            <div className="p-2" />
-          )}
+          {isMobile && <CommercialApiButton backgroundClasses="mt-3" />}
         </ZoneDetailsContent>
       </div>
-    </>
+    </div>
   );
 }
 

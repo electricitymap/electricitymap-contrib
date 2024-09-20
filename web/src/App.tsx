@@ -16,6 +16,7 @@ import { Helmet } from 'react-helmet-async';
 import { useTranslation } from 'react-i18next';
 import trackEvent from 'utils/analytics';
 import { metaTitleSuffix } from 'utils/constants';
+import { useIsMobile } from 'utils/styling';
 
 const MapWrapper = lazy(async () => import('features/map/MapWrapper'));
 const LeftPanel = lazy(async () => import('features/panels/LeftPanel'));
@@ -32,6 +33,30 @@ if (isProduction) {
     isNative: Capacitor.isNativePlatform(),
     platform: Capacitor.getPlatform(),
   });
+}
+
+function LeftElementsWrapper(): ReactElement {
+  const isMobile = useIsMobile();
+
+  return isMobile ? (
+    <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-50 h-full w-full">
+      <Suspense>
+        <LeftPanel />
+      </Suspense>
+      <Suspense>
+        <TimeControllerWrapper />
+      </Suspense>
+    </div>
+  ) : (
+    <div className="pointer-events-none absolute left-0 top-0 z-50 my-2 ml-2 flex h-full max-h-[calc(100%-5rem)] w-[500px] flex-col justify-end gap-2 overflow-x-visible">
+      <Suspense>
+        <LeftPanel />
+      </Suspense>
+      <Suspense>
+        <TimeControllerWrapper />
+      </Suspense>
+    </div>
+  );
 }
 
 export default function App(): ReactElement {
@@ -99,14 +124,9 @@ export default function App(): ReactElement {
                 <InfoModal />
                 <SettingsModal />
               </Suspense>
-              <Suspense>
-                <LeftPanel />
-              </Suspense>
+              <LeftElementsWrapper />
               <Suspense>
                 <MapWrapper />
-              </Suspense>
-              <Suspense>
-                <TimeControllerWrapper />
               </Suspense>
               <Suspense>
                 <MapOverlays />
