@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { EmapsIcon } from 'icons/emapsIcon';
 import { useAtom } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
@@ -6,11 +7,6 @@ import { useTranslation } from 'react-i18next';
 import trackEvent from 'utils/analytics';
 import { TrackEvent } from 'utils/constants';
 
-import {
-  isAndroid,
-  isIphone,
-  isMobileWeb,
-} from '../features/weather-layers/wind-layer/util';
 import { Button } from './Button';
 import { DefaultCloseButton, DefaultCloseButtonProps } from './DefaultCloseButton';
 
@@ -90,15 +86,15 @@ const useAppStoreBannerState = (): AppStoreBannerState => {
 };
 
 const getAppStoreUrl = (appStoreIsDismissed: boolean): AppStoreURLs | undefined => {
-  if (appStoreIsDismissed || !isMobileWeb()) {
+  if (appStoreIsDismissed || Capacitor.isNativePlatform()) {
     return undefined;
   }
 
-  if (isAndroid()) {
+  if (/Android|android/.test(navigator.userAgent)) {
     return AppStoreURLs.GOOGLE;
   }
 
-  if (isIphone()) {
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
     return AppStoreURLs.APPLE;
   }
 };

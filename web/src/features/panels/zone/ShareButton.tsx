@@ -1,9 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { Share as CapShare } from '@capacitor/share';
 import { Button, ButtonProps } from 'components/Button';
-import { MemoizedShareIcon } from 'components/ShareIcon';
+import { defaultShouldShowIosIcon, MemoizedShareIcon } from 'components/ShareIcon';
 import { Toast, useToastReference } from 'components/Toast';
-import { isIos, isMobile } from 'features/weather-layers/wind-layer/util';
 import { useShare } from 'hooks/useShare';
 import { Link } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -11,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { twMerge } from 'tailwind-merge';
 import { ShareType, trackShare } from 'utils/analytics';
 import { baseUrl, DEFAULT_ICON_SIZE, DEFAULT_TOAST_DURATION } from 'utils/constants';
+import { hasMobileUserAgent as _hasMobileUserAgent } from 'utils/helpers';
 
 interface ShareButtonProps
   extends Omit<
@@ -28,8 +28,8 @@ const trackShareClick = trackShare(ShareType.SHARE);
 export function ShareButton({
   iconSize = DEFAULT_ICON_SIZE,
   shareUrl = baseUrl,
-  showIosIcon = isIos(),
-  hasMobileUserAgent = isMobile(),
+  showIosIcon = defaultShouldShowIosIcon(),
+  hasMobileUserAgent = _hasMobileUserAgent(),
   ...restProps
 }: ShareButtonProps) {
   const { t } = useTranslation();
